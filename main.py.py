@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-TOKEN = 'توکن رباتتو اینجا بذار'
+TOKEN = '7775669039:AAEN6c7X9nYMAka2Dm5BPHxM2AL4svQtWLg'
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
