@@ -1,0 +1,142 @@
+import json
+import os
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
+
+TOKEN = "7775669039:AAEN6c7X9nYMAka2Dm5BPHxM2AL4svQtWLg"
+
+DB_FILE = "file_data.json"
+if not os.path.exists(DB_FILE):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, ensure_ascii=False, indent=2)
+
+menu = {
+    "فیزیولوژی": {
+        "سلول": ["نظری", "عملی"],
+        "قلب": ["نظری", "عملی"],
+        "تنفس": ["نظری", "عملی"],
+        "خون": ["نظری", "عملی"],
+        "گردش خون": ["نظری", "عملی"],
+    },
+    "آناتومی": {
+        "اندام": ["نظری", "عملی"],
+        "تنفس": ["نظری", "عملی"],
+        "سرو گردن": ["نظری", "عملی"],
+    },
+    "بیوشیمی": {
+        "مولکول و سلول": ["نظری", "عملی"]
+    },
+    "بافت شناسی": {
+        "مولکول و سلول": ["نظری", "عملی"]
+    },
+    "جنین شناسی": {},
+    "اصول خدمات سلامت": None
+}
+
+user_state = {}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton(text=k, callback_data=f"lesson|{k}")] for k in menu]
+    await update.message.reply_text("یکی از درس‌ها رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    if data.startswith("lesson|"):
+        lesson = data.split("|")[1]
+        user_state[user_id] = {"lesson": lesson}
+        subs = menu[lesson]
+
+        if subs is None:
+            user_state[user_id]["path"] = [lesson]
+            await query.edit_message_text(f"الان می‌تونی فایل مربوط به «{lesson}» رو بفرستی.")
+        elif subs == {}:
+            await query.edit_message_text("زیرشاخه‌ای برای این درس تعریف نشده.")
+        else:
+            keyboard = [[InlineKeyboardButton(text=sub, callback_data=f"sub|{sub}")] for sub in subs]
+            await query.edit_message_text("زیرشاخه رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("sub|"):
+        sub = data.split("|")[1]
+        user_state[user_id]["sub"] = sub
+        lesson = user_state[user_id]["lesson"]
+        parts = menu[lesson][sub]
+        keyboard = [[InlineKeyboardButton(text=part, callback_data=f"part|{part}")] for part in parts]
+        await query.edit_message_text("نظری یا عملی؟", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("part|"):
+        part = data.split("|")[1]
+        lesson = user_state[user_id]["lesson"]
+        sub = user_state[user_id]["sub"]
+        user_state[user_id]["path"] = [lesson, sub, part]
+        await query.edit_message_text(f"الان می‌تونی فایل مربوط به «{lesson} / {sub} / {part}» رو بفرستی.")
+
+    elif data.startswith("get|"):
+        path = data.split("|")[1:]
+        key = "/".join(path)
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            db = json.load(f)
+
+        if key in db:
+            for file_id in db[key]:
+                await query.message.reply_document(file_id)
+        else:
+            await query.message.reply_text("هیچ فایلی برای این بخش ثبت نشده.")
+
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in user_state or "path" not in user_state[user_id]:
+        await update.message.reply_text("لطفاً اول مسیر درس رو انتخاب کن با /start")
+        return
+
+    path = user_state[user_id]["path"]
+    key = "/".join(path)
+    file = update.message.document
+
+    with open(DB_FILE, "r", encoding="utf-8") as f:
+        db = json.load(f)
+
+    if key not in db:
+        db[key] = []
+
+    db[key].append(file.file_id)
+
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=2)
+
+    await update.message.reply_text("فایل ذخیره شد ✅")
+
+async def get_files_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    with open(DB_FILE, "r", encoding="utf-8") as f:
+        db = json.load(f)
+    keys = list(db.keys())
+
+    if not keys:
+        await update.message.reply_text("هنوز هیچ فایلی ذخیره نشده.")
+        return
+
+    for key in keys:
+        keyboard.append([InlineKeyboardButton(text=key, callback_data=f"get|{key}")])
+
+    await update.message.reply_text("یه مسیر رو انتخاب کن تا فایل‌ها رو ببینی:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+if name == '__main__':
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("getfiles", get_files_command))
+    app.add_handler(CallbackQueryHandler(handle_query))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+
+    print("ربات در حال اجراست...")
+    app.run_polling()
